@@ -21,6 +21,7 @@ to mute these!
 import argparse
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,9 @@ overflowed`. This is presumably not ideal since it means we are missing some
 frames in the final recording, but so far this damage hasn't been audible
 to me.
 """
+
+SCRIPT_DIR = os.path.dirname((os.path.realpath(__file__)))
+NOISY_APPS = os.path.join(SCRIPT_DIR, ".noisy_apps")
 
 
 def get_existing_output_device():
@@ -185,7 +189,8 @@ def get_args():
         help=(
             "Default is same as midi path, but with .m4a extension. If the "
             "extension is not '.wav', the wav file will be attempted to be "
-            "converted with ffmpeg"
+            "converted with ffmpeg. Will attempt to create the directory if "
+            "it does not exist."
         ),
     )
     parser.add_argument(
@@ -209,6 +214,8 @@ def get_args():
 def write_to_output_path(midi_path, output_path, temp_out_path, overwrite):
     if output_path is None:
         output_path = os.path.splitext(midi_path)[0] + ".m4a"
+    if not os.path.exists(os.path.dirname(output_path)):
+        os.makedirs(os.path.dirname(output_path))
     if output_path.endswith(".wav"):
         shutil.move(temp_out_path, output_path)
         print(f"Output written to {output_path}")
@@ -229,6 +236,34 @@ def write_to_output_path(midi_path, output_path, temp_out_path, overwrite):
         )
 
 
+def check_for_noisy_apps():
+    if not os.path.exists(NOISY_APPS):
+        print("Warning: no file called .noisy_apps foung in pygmid2aud folder")
+        input("<press enter to continue>")
+        return
+    with open(NOISY_APPS, "r", encoding="utf-8") as inf:
+        apps = [app for app in inf.read().split("\n") if app]
+    ps_result = subprocess.run(
+        ["ps", "aux"], capture_output=True, check=True
+    ).stdout.decode()
+    open_apps = []
+    for app in apps:
+        if re.search(f"{app}", ps_result, re.IGNORECASE):
+            open_apps.append(app)
+    if open_apps:
+        print(
+            "The following potentially noisy apps are open, please close them "
+            "and then try again:"
+        )
+        for app in open_apps:
+            print(" " * 4 + app)
+        print(
+            "(The list of potentially noisy apps "
+            "to be checked is in .noisy_apps in the pygmid2aud folder)"
+        )
+        sys.exit(1)
+
+
 def main():
     (
         midi_path,
@@ -239,6 +274,7 @@ def main():
         rate,
         frames_per_buffer,
     ) = get_args()
+    check_for_noisy_apps()
     _, temp_out_path = tempfile.mkstemp(suffix=".wav")
     orig_device = get_existing_output_device()
     soundflower_on()
