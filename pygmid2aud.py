@@ -13,6 +13,8 @@ PortAudio
 Soundflower
 ffmpeg (not required if output format is '.wav')
 SwitchAudioSource
+do-not-disturb-cli
+    https://github.com/sindresorhus/do-not-disturb-cli
 
 The playback will not be audible during recording. Also, any other sounds on
 your computer (e.g., email notifications) will be recorded as well. So best
@@ -236,6 +238,24 @@ def write_to_output_path(midi_path, output_path, temp_out_path, overwrite):
         )
 
 
+def dnd_off():
+    dnd_status = (
+        subprocess.run(
+            ["do-not-disturb", "status"], capture_output=True, check=True
+        )
+        .stdout.decode()
+        .strip()
+    )
+    if dnd_status == "off":
+        subprocess.run(["do-not-disturb", "on"], check=True)
+    return dnd_status
+
+
+def restore_dnd(orig_status):
+    if orig_status == "off":
+        subprocess.run(["do-not-disturb", "off"], check=True)
+
+
 def check_for_noisy_apps():
     if not os.path.exists(NOISY_APPS):
         print("Warning: no file called .noisy_apps foung in pygmid2aud folder")
@@ -274,6 +294,8 @@ def main():
         rate,
         frames_per_buffer,
     ) = get_args()
+    orig_dnd_status = dnd_off()
+
     check_for_noisy_apps()
     _, temp_out_path = tempfile.mkstemp(suffix=".wav")
     orig_device = get_existing_output_device()
@@ -289,9 +311,11 @@ def main():
         )
     except:
         soundflower_off(orig_device)
+        restore_dnd(orig_dnd_status)
         raise
     else:
         soundflower_off(orig_device)
+        restore_dnd(orig_dnd_status)
         if result:
             write_to_output_path(
                 midi_path, output_path, temp_out_path, overwrite
